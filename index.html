@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Vizag Adventure 2025</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="toast-box"></div>
+
+<header>
+    <h1>Vizag Adventure</h1>
+    <div class="subtitle" id="tripSubtitle">Loading Dates...</div>
+    <div id="appStatus">Connecting...</div>
+    <div id="syncStatus" style="font-size:0.7rem; opacity:0.8; margin-top:5px;"></div>
+    <div class="countdown-badge">
+        <span id="timerEmoji">⌛</span> <span id="timer">Calculating...</span>
+    </div>
+</header>
+
+<div class="container">
+    <div id="dashboard" class="page active">
+        <div class="card" style="border-left: 6px solid var(--accent);">
+            <div class="next-up-icon">📍</div>
+            <div class="card-label">Next Up</div>
+            <h2 id="nextEventTitle">Loading...</h2>
+            <div id="nextEventMeta" class="card-sub">---</div>
+        </div>
+
+        <div class="grid-stats">
+            <div class="card full-width" onclick="navigateTo('money', 2)">
+                <div class="budget-card-header">
+                <div>
+                    <div class="card-label">Budget Remaining</div>
+                    <div class="card-value">₹<span id="dashBudgetRem">0</span></div>
+                    <div class="card-sub" id="dashBudgetStatus">of ₹0 Total</div>
+                    <div id="dashBudgetSpent" class="card-sub">Spent: ₹0</div>
+                </div>
+                    <div class="budget-icon">💰</div>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-bar" id="dashBudgetBar"></div>
+                </div>
+            </div>
+            <div class="card" style="text-align: center;" onclick="navigateTo('itinerary', 1)">
+                <div style="font-size: 1.5rem;">📍</div>
+                <div class="card-value" id="dashboardPlaceStat">0/0</div>
+                <div class="card-label">Visited</div>
+            </div>
+            <div class="card" style="text-align: center;" onclick="navigateTo('packing', 3)">
+                <div style="font-size: 1.5rem;">🎒</div>
+                <div class="card-value" id="dashboardPackStat">0/0</div>
+                <div class="card-label">Packed</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 class="section-title-small" style="font-size: 0.9rem; margin-bottom: 12px;">The Squad</h3>
+            <div class="member-avatars" id="avatarContainer"></div>
+            <div class="helper-text">Tap profile for details</div>
+        </div>
+    </div>
+
+    <div id="itinerary" class="page container">
+        <div class="card driver-toggle-card">
+     <div>
+       <strong>🚗 Driver Mode</strong>
+       <div class="card-sub">Show Parking & Tolls</div>
+     </div>
+     <label class="switch">
+        <input type="checkbox" id="driverToggle" onchange="renderItinerary()">
+        <span class="slider"></span>
+     </label>
+  </div>
+        <div class="day-tabs" id="dayTabs"></div>
+  <div class="timeline" id="timelineContainer"></div>
+    </div>
+
+    <div id="money" class="page">
+        <div class="card">
+            <h3 style="margin-bottom:15px;">Budget Overview</h3>
+            <canvas id="budgetChart" height="180"></canvas>
+            <div class="grid-stats" style="margin-top:20px; text-align:center;">
+                <div>
+                    <div class="card-label">Total Spent</div>
+                    <div id="totalSpentText" style="color:var(--alert); font-weight:800; font-size:1.2rem;">₹0</div>
+                </div>
+                <div>
+                    <div class="card-label">Remaining</div>
+                    <div id="totalRemText" style="color:var(--primary); font-weight:800; font-size:1.2rem;">₹0</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Add Transaction</h3>
+            <div class="grid-stats" style="margin-bottom:0">
+                <input type="date" id="exDate">
+                <select id="exCategory">
+                    <option>Food</option><option>Accommodation</option><option>Tickets</option><option>Parking</option>
+                    <option>Fuel</option><option>Car Rent</option><option>Misc</option><option>Tolls</option><option>individual</option>
+                </select>
+            </div>
+            <input type="text" id="exDesc" placeholder="Description">
+            <div class="grid-stats" style="margin-bottom:0">
+                <input type="number" id="exAmount" placeholder="Amount ₹">
+                <select id="exPayer"></select>
+            </div>
+            <div class="split-selection">
+                <label><input type="radio" name="splitType" value="equal" checked onchange="toggleBene()"> Split Equally</label>
+                <label><input type="radio" name="splitType" value="individual" onchange="toggleBene()"> Individual</label>
+            </div>
+            <div id="beneDiv" style="display:none;">
+                <select id="exBene"></select>
+                <p style="font-size:0.65rem; color:var(--text-light); margin-bottom:10px;">* Use negative amount for returns</p>
+            </div>
+            <button id="saveTxBtn" class="btn btn-primary" onclick="addExpense()">Save Transaction</button>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-bottom:12px;">Live Data Log</h3>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr style="background:var(--primary); color:white;">
+                            <th>Date</th><th>Desc</th><th>₹</th><th>Paid</th><th>Type</th><th>Bene/Share</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactionLogBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="packing" class="page">
+        <div class="card" style="background:var(--secondary); color:white; text-align:center;">
+            <h1 id="packPerc" style="font-size:3rem;">0%</h1>
+            <p>Ready for Adventure</p>
+        </div>
+        <div id="packingContainer" style="margin-top:15px;"></div>
+    </div>
+</div>
+
+<div id="profileModal" class="modal-overlay" onclick="closeProfileModal()">
+    <div class="modal-card" onclick="event.stopPropagation()">
+        <div id="modalMainView">
+            <div id="modalAvatar" class="avatar" style="margin: 0 auto 15px; width: 70px; height: 70px; font-size: 1.5rem;"></div>
+            <h2 id="modalName">Name</h2>
+            <div class="grid-stats" style="margin-top:20px;">
+                <div class="card" style="background:var(--bg); margin:0; padding:10px;">
+                    <div class="card-label">Paid</div>
+                    <div id="modalPaid" style="font-weight:800;">₹0</div>
+                </div>
+                <div class="card" style="background:var(--bg); margin:0; padding:10px;">
+                    <div class="card-label">Share</div>
+                    <div id="modalShare" style="font-weight:800;">₹0</div>
+                </div>
+            </div>
+            <div id="modalBalance" style="padding:15px; border-radius:12px; font-weight:800; margin:15px 0; cursor:pointer; position:relative;">
+                <div id="balanceText"></div>
+                <div style="font-size: 0.7rem; opacity: 0.7; font-weight: 400; margin-top: 4px;">Tap for details <i class="fas fa-chevron-right"></i></div>
+            </div>
+            <button class="btn btn-primary" onclick="closeProfileModal()">Close</button>
+        </div>
+
+        <div id="modalDetailView" style="display:none; text-align: left;">
+            <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                <i class="fas fa-arrow-left" onclick="toggleModalView(false)" style="cursor:pointer; margin-right: 15px;"></i>
+                <h3 id="detailTitle">Settlement Details</h3>
+            </div>
+            <div id="settlementList" style="max-height: 300px; overflow-y: auto;">
+                </div>
+            <button class="btn btn-outline" style="margin-top: 15px;" onclick="toggleModalView(false)">Back</button>
+        </div>
+    </div>
+</div>
+
+<nav class="nav-bar">
+  <a href="#" class="nav-item active" onclick="switchPage('dashboard', this)"><span>🏠</span><span class="label">Dash</span></a>
+  <a href="#" class="nav-item" onclick="switchPage('itinerary', this)"><span>🗺️</span><span class="label">Plan</span></a>
+  <a href="#" class="nav-item" onclick="switchPage('money', this)"><span>💸</span><span class="label">Money</span></a>
+  <a href="#" class="nav-item" onclick="switchPage('packing', this)"><span>🎒</span><span class="label">Pack</span></a>
+</nav>
+<script src="script.js"></script>
+</body>
+</html>
