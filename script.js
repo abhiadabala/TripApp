@@ -1,4 +1,5 @@
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxCcFc1ZOK1Bb0-8hKNCwDTetO4tntHtZDWRqwNI2fkOWeUxvlyUeknadkly_5kRtXeJw/exec"; 
+
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxCcFc1ZOK1Bb0-8hKNCwDTetO4tntHtZDWRqwNI2fkOWeUxvlyUeknadkly_5kRtXeJw/exec"; 
 
     // --- 1. LOCAL STORAGE & SYNC SETUP ---
     let db = JSON.parse(localStorage.getItem('tripData')) || {
@@ -340,6 +341,45 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxCcFc1ZOK1Bb0-8hKNC
         }
     }
 
+    // ============================================
+    // 🔍 NEW: FILTERING LOGIC
+    // ============================================
+
+    function filterTransactions() {
+        const fDate = document.getElementById("fDate").value.toLowerCase();
+        const fDesc = document.getElementById("fDesc").value.toLowerCase();
+        const fAmt = parseFloat(document.getElementById("fAmt").value) || 0;
+        const fPayer = document.getElementById("fPayer").value;
+        const fType = document.getElementById("fType").value;
+        const fBene = document.getElementById("fBene").value.toLowerCase();
+
+        // Filter Logic
+        const filtered = db.transactions.filter(t => {
+            const dDate = formatDate(t.date).toLowerCase(); 
+            const matchDate = dDate.includes(fDate);
+            const matchDesc = String(t.desc).toLowerCase().includes(fDesc);
+            const matchAmt = (parseFloat(t.amount) || 0) >= fAmt;
+            const matchPayer = fPayer === "" || t.payer === fPayer;
+            const matchType = fType === "" || t.type === fType;
+            const matchBene = String(t.bene).toLowerCase().includes(fBene);
+
+            return matchDate && matchDesc && matchAmt && matchPayer && matchType && matchBene;
+        });
+
+        renderTransactionTable(filtered);
+    }
+
+    function renderTransactionTable(data) {
+        const log = document.getElementById("transactionLogBody");
+        log.innerHTML = "";
+        data.forEach(t => {
+            log.innerHTML += `<tr>
+                <td>${formatDate(t.date)}</td><td>${t.desc}</td><td>₹${t.amount}</td>
+                <td>${t.payer}</td><td>${t.type}</td><td>${t.bene}</td>
+            </tr>`;
+        });
+    }
+
     // --- HELPER FUNCTIONS ---
     function formatDate(dateInput) {
         if (!dateInput) return "---";
@@ -510,13 +550,26 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxCcFc1ZOK1Bb0-8hKNC
     function renderMoney() {
         const pSel = document.getElementById("exPayer");
         const bSel = document.getElementById("exBene");
+        const fPayer = document.getElementById("fPayer");
+
+        // Populate Payers (both for add expense AND filter)
         if(pSel.children.length <= 1) {
             pSel.innerHTML = bSel.innerHTML = "<option disabled selected>Select...</option>";
+            const uniquePayers = new Set();
+            
             db.settlement.forEach(s => {
                 if(!s.name) return;
                 pSel.innerHTML += `<option value="${s.name}">${s.name}</option>`;
                 bSel.innerHTML += `<option value="${s.name}">${s.name}</option>`;
+                uniquePayers.add(s.name);
             });
+
+            // Populate Filter Payer if empty
+            if(fPayer.children.length <= 1) {
+                uniquePayers.forEach(name => {
+                    fPayer.innerHTML += `<option value="${name}">${name}</option>`;
+                });
+            }
         }
         
         const ctx = document.getElementById("budgetChart").getContext("2d");
@@ -537,14 +590,8 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxCcFc1ZOK1Bb0-8hKNC
         document.getElementById("totalSpentText").innerText = `₹${spent.toLocaleString()}`;
         document.getElementById("totalRemText").innerText = `₹${(planned - spent).toLocaleString()}`;
         
-        const log = document.getElementById("transactionLogBody");
-        log.innerHTML = "";
-        db.transactions.slice(0, 50).forEach(t => {
-            log.innerHTML += `<tr>
-                <td>${formatDate(t.date)}</td><td>${t.desc}</td><td>₹${t.amount}</td>
-                <td>${t.payer}</td><td>${t.type}</td><td>${t.bene}</td>
-            </tr>`;
-        });
+        // Initial Table Render (triggers filtering to show all)
+        filterTransactions();
     }
 
     function renderPacking() {
@@ -579,21 +626,28 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxCcFc1ZOK1Bb0-8hKNC
         if(id === 'dashboard') renderDashboard();
     }
 
+    // ================= MODAL LOGIC (UPDATED 3-LAYER) =================
+
+    let currentProfileName = ""; // Stores who we are looking at
+
     function closeProfileModal() {
         document.getElementById("profileModal").classList.remove('show');
-        setTimeout(() => toggleModalView(false), 300); 
+        setTimeout(() => showLayer(1), 300); // Reset to main view
     }
 
-    function toggleModalView(showDetail) {
-        document.getElementById("modalMainView").style.display = showDetail ? "none" : "block";
-        document.getElementById("modalDetailView").style.display = showDetail ? "block" : "none";
+    // Controls which view is visible: 1=Main, 2=FriendList, 3=DeepDive
+    function showLayer(layerNumber) {
+        document.getElementById("modalMainView").style.display = layerNumber === 1 ? "block" : "none";
+        document.getElementById("modalFriendListView").style.display = layerNumber === 2 ? "block" : "none";
+        document.getElementById("modalDeepDiveView").style.display = layerNumber === 3 ? "block" : "none";
     }
 
     function showProfile(personData) {
-        const name = personData.name;
-        document.getElementById("modalName").innerText = name;
-        document.getElementById("modalAvatar").innerText = name.substring(0,2).toUpperCase();
+        currentProfileName = personData.name;
         
+        // Render Layer 1 (Main Profile)
+        document.getElementById("modalName").innerText = currentProfileName;
+        document.getElementById("modalAvatar").innerText = currentProfileName.substring(0,2).toUpperCase();
         document.getElementById("modalPaid").innerText = `₹${(parseFloat(personData.totalpaid) || 0).toLocaleString()}`;
         document.getElementById("modalShare").innerText = `₹${(parseFloat(personData.shareOfSharedExpenses) || 0).toLocaleString()}`;
         
@@ -607,46 +661,95 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxCcFc1ZOK1Bb0-8hKNC
         bEl.style.color = isDebt ? "var(--alert)" : "var(--secondary)";
         bEl.style.background = isDebt ? "rgba(230, 57, 70, 0.1)" : "rgba(42, 157, 143, 0.1)";
 
+        // Set Click Action to go to Layer 2
         bEl.onclick = () => {
-            renderSettlementDetail(name);
-            toggleModalView(true);
+            renderFriendList(currentProfileName);
+            showLayer(2);
         };
 
         document.getElementById("profileModal").classList.add("show");
     }
 
-    function renderSettlementDetail(userName) {
-        const listCon = document.getElementById("settlementList");
-        listCon.innerHTML = "";
+    // LAYER 2: Render List of Net Balances vs Other People
+    function renderFriendList(myName) {
+        const container = document.getElementById("friendListContainer");
+        container.innerHTML = "";
         
-        const grid = db.settlementGrid || []; 
+        const grid = db.settlementGrid || [];
         const headers = db.settlementHeaders || [];
         let hasData = false;
 
-        grid.forEach(row => {
-            const payerName = row.name;
-            if (payerName === userName) {
-                headers.forEach(receiverName => {
-                    const amount = parseFloat(row[receiverName]) || 0;
-                    if (amount > 0 && receiverName !== userName) {
-                         hasData = true;
-                         addDetailItem(listCon, `Receive from <b>${receiverName}</b>`, `+₹${Math.ceil(amount)}`, "var(--secondary)");
-                    }
-                });
-            } else {
-                if (headers.includes(userName)) {
-                    const amount = parseFloat(row[userName]) || 0;
-                    if (amount > 0) {
-                        hasData = true;
-                        addDetailItem(listCon, `Pay to <b>${payerName}</b>`, `-₹${Math.ceil(amount)}`, "var(--alert)");
-                    }
-                }
+        // Find My Row (Where I paid for others)
+        const myRow = grid.find(r => r.name === myName) || {};
+
+        headers.forEach(theirName => {
+            if (theirName === myName) return;
+
+            // Math: Net = (What I paid for them) - (What they paid for me)
+            const iPaidForThem = parseFloat(myRow[theirName]) || 0;
+            
+            // Find Their Row (Where they paid for me)
+            const theirRow = grid.find(r => r.name === theirName) || {};
+            const theyPaidForMe = parseFloat(theirRow[myName]) || 0;
+
+            const net = iPaidForThem - theyPaidForMe;
+
+            if (Math.abs(net) > 1) { // Only show if difference > 1 rupee
+                hasData = true;
+                const div = document.createElement("div");
+                div.className = "friend-row";
+                
+                const color = net > 0 ? "var(--secondary)" : "var(--alert)"; // Green if I get, Red if I pay
+                const text = net > 0 ? `Get from <b>${theirName}</b>` : `Pay to <b>${theirName}</b>`;
+                const amount = `₹${Math.round(Math.abs(net)).toLocaleString()}`;
+
+                div.innerHTML = `<span>${text}</span> <span style="color:${color}; font-weight:800;">${amount} <i class="fas fa-chevron-right" style="font-size:0.7rem; opacity:0.5; margin-left:5px;"></i></span>`;
+                
+                // Click to go to Layer 3
+                div.onclick = () => {
+                    renderDeepDive(myName, theirName, iPaidForThem, theyPaidForMe);
+                    showLayer(3);
+                };
+                container.appendChild(div);
             }
         });
 
         if (!hasData) {
-            listCon.innerHTML = "<div class='card-sub' style='text-align:center; padding: 20px;'>Everything is clear! 🏖️</div>";
+            container.innerHTML = "<div class='card-sub' style='text-align:center; padding: 20px;'>All Settled! 🏖️</div>";
         }
+    }
+
+    // LAYER 3: Specific Breakdown (Receive X, Pay Y)
+    function renderDeepDive(myName, theirName, iPaidForThem, theyPaidForMe) {
+        const container = document.getElementById("deepDiveContainer");
+        document.getElementById("deepDiveTitle").innerText = `${theirName}`;
+        container.innerHTML = "";
+
+        // 1. Show what I receive (Positive)
+        if (iPaidForThem > 0) {
+            addDetailItem(container, `Receive (You paid for ${theirName})`, `+₹${Math.round(iPaidForThem)}`, "var(--secondary)");
+        }
+
+        // 2. Show what I pay (Negative)
+        if (theyPaidForMe > 0) {
+            addDetailItem(container, `Pay (${theirName} paid for you)`, `-₹${Math.round(theyPaidForMe)}`, "var(--alert)");
+        }
+
+        // 3. Show Grand Total Line
+        const net = iPaidForThem - theyPaidForMe;
+        const div = document.createElement("div");
+        div.style.padding = "15px 12px";
+        div.style.marginTop = "10px";
+        div.style.borderTop = "2px dashed rgba(0,0,0,0.1)";
+        div.style.display = "flex";
+        div.style.justifyContent = "space-between";
+        div.style.fontWeight = "800";
+        
+        const finalColor = net > 0 ? "var(--secondary)" : (net < 0 ? "var(--alert)" : "var(--text)");
+        const finalText = net > 0 ? "Net Receive" : (net < 0 ? "Net Pay" : "Settled");
+        
+        div.innerHTML = `<span>${finalText}</span> <span style="color:${finalColor}">₹${Math.round(Math.abs(net))}</span>`;
+        container.appendChild(div);
     }
 
     function addDetailItem(container, textHTML, amountText, color) {

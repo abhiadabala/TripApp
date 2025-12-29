@@ -10,7 +10,6 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
 <div id="toast-box"></div>
 
 <header>
@@ -128,7 +127,25 @@
                 <table>
                     <thead>
                         <tr style="background:var(--primary); color:white;">
-                            <th>Date</th><th>Desc</th><th>₹</th><th>Paid</th><th>Type</th><th>Bene/Share</th>
+                            <th>Date</th><th>Desc</th><th>₹</th><th>Paid</th><th>Type</th><th>Bene</th>
+                        </tr>
+                        <tr style="background:var(--bg);">
+                            <th style="padding:2px;"><input type="text" id="fDate" class="filter-input" placeholder="Filter..." onkeyup="filterTransactions()"></th>
+                            <th style="padding:2px;"><input type="text" id="fDesc" class="filter-input" placeholder="Filter..." onkeyup="filterTransactions()"></th>
+                            <th style="padding:2px;"><input type="number" id="fAmt" class="filter-input" placeholder="> 0" onkeyup="filterTransactions()"></th>
+                            <th style="padding:2px;">
+                                <select id="fPayer" class="filter-input" onchange="filterTransactions()">
+                                    <option value="">All</option>
+                                </select>
+                            </th>
+                            <th style="padding:2px;">
+                                <select id="fType" class="filter-input" onchange="filterTransactions()">
+                                    <option value="">All</option>
+                                    <option>Equal</option>
+                                    <option>Individual</option>
+                                </select>
+                            </th>
+                            <th style="padding:2px;"><input type="text" id="fBene" class="filter-input" placeholder="Filter..." onkeyup="filterTransactions()"></th>
                         </tr>
                     </thead>
                     <tbody id="transactionLogBody"></tbody>
@@ -163,19 +180,26 @@
             </div>
             <div id="modalBalance" style="padding:15px; border-radius:12px; font-weight:800; margin:15px 0; cursor:pointer; position:relative;">
                 <div id="balanceText"></div>
-                <div style="font-size: 0.7rem; opacity: 0.7; font-weight: 400; margin-top: 4px;">Tap for details <i class="fas fa-chevron-right"></i></div>
+                <div style="font-size: 0.7rem; opacity: 0.7; font-weight: 400; margin-top: 4px;">Tap to see breakdown <i class="fas fa-chevron-right"></i></div>
             </div>
             <button class="btn btn-primary" onclick="closeProfileModal()">Close</button>
         </div>
 
-        <div id="modalDetailView" style="display:none; text-align: left;">
+        <div id="modalFriendListView" style="display:none; text-align: left;">
             <div style="display: flex; align-items: center; margin-bottom: 15px;">
-                <i class="fas fa-arrow-left" onclick="toggleModalView(false)" style="cursor:pointer; margin-right: 15px;"></i>
-                <h3 id="detailTitle">Settlement Details</h3>
+                <i class="fas fa-arrow-left" onclick="showLayer(1)" style="cursor:pointer; margin-right: 15px; padding:5px;"></i>
+                <h3 id="friendListTitle">Net Settlements</h3>
             </div>
-            <div id="settlementList" style="max-height: 300px; overflow-y: auto;">
-                </div>
-            <button class="btn btn-outline" style="margin-top: 15px;" onclick="toggleModalView(false)">Back</button>
+            <div class="helper-text" style="text-align:left; margin-bottom:10px;">Tap a name for details</div>
+            <div id="friendListContainer" style="max-height: 300px; overflow-y: auto;"></div>
+        </div>
+
+        <div id="modalDeepDiveView" style="display:none; text-align: left;">
+            <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                <i class="fas fa-arrow-left" onclick="showLayer(2)" style="cursor:pointer; margin-right: 15px; padding:5px;"></i>
+                <h3 id="deepDiveTitle">Person</h3>
+            </div>
+            <div id="deepDiveContainer" style="max-height: 300px; overflow-y: auto;"></div>
         </div>
     </div>
 </div>
