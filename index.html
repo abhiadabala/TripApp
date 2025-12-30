@@ -11,7 +11,6 @@
 </head>
 <body>
 <div id="toast-box"></div>
-
 <header>
     <h1>Vizag Adventure</h1>
     <div class="subtitle" id="tripSubtitle">Loading Dates...</div>
@@ -21,7 +20,6 @@
         <span id="timerEmoji">⌛</span> <span id="timer">Calculating...</span>
     </div>
 </header>
-
 <div class="container">
     <div id="dashboard" class="page active">
         <div class="card" style="border-left: 6px solid var(--accent);">
@@ -95,6 +93,19 @@
                 </div>
             </div>
         </div>
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3>Trip Settlements</h3>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:0.75rem; font-weight:600;">Groups</span>
+                    <label class="switch">
+                       <input type="checkbox" id="groupToggle" checked onchange="renderSettlements()">
+                       <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div id="settlementList"></div>
+        </div>
 
         <div class="card">
             <h3>Add Transaction</h3>
@@ -162,7 +173,6 @@
         <div id="packingContainer" style="margin-top:15px;"></div>
     </div>
 </div>
-
 <div id="profileModal" class="modal-overlay" onclick="closeProfileModal()">
     <div class="modal-card" onclick="event.stopPropagation()">
         <div id="modalMainView">
@@ -203,7 +213,6 @@
         </div>
     </div>
 </div>
-
 <nav class="nav-bar">
   <a href="#" class="nav-item active" onclick="switchPage('dashboard', this)"><span>🏠</span><span class="label">Dash</span></a>
   <a href="#" class="nav-item" onclick="switchPage('itinerary', this)"><span>🗺️</span><span class="label">Plan</span></a>

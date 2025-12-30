@@ -1,24 +1,19 @@
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxCcFc1ZOK1Bb0-8hKNCwDTetO4tntHtZDWRqwNI2fkOWeUxvlyUeknadkly_5kRtXeJw/exec";
 
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxCcFc1ZOK1Bb0-8hKNCwDTetO4tntHtZDWRqwNI2fkOWeUxvlyUeknadkly_5kRtXeJw/exec"; 
-
-    // --- 1. LOCAL STORAGE & SYNC SETUP ---
     let db = JSON.parse(localStorage.getItem('tripData')) || {
         itinerary: [], budget: [], settlement: [], checklist: [], transactions: [],
-        settlementGrid: [], settlementHeaders: []
+        settlementGrid: [], settlementHeaders: [], friendsMeta: [] 
     };
-    
+   
     let syncQueue = JSON.parse(localStorage.getItem('syncQueue')) || [];
     let curDay = "";
     let chartObj = null;
-    let isSyncing = false; 
+    let isSyncing = false;
 
-    // --- 2. SERVICE WORKER ---
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js')
-            .catch(err => console.log('SW Fail:', err));
+        navigator.serviceWorker.register('sw.js').catch(err => console.log('SW Fail:', err));
     }
 
-    // --- 3. TOAST UI ---
     function showToast(message, type = "info") {
         const box = document.getElementById("toast-box");
         const el = document.createElement("div");
@@ -38,11 +33,10 @@
         }, 3500);
     }
 
-    // --- 4. DATA SYNC LOGIC ---
     function saveDataLocally() {
         localStorage.setItem('tripData', JSON.stringify(db));
         localStorage.setItem('syncQueue', JSON.stringify(syncQueue));
-        updateSyncUI(); 
+        updateSyncUI();
     }
 
     function updateSyncUI() {
@@ -52,11 +46,11 @@
 
         if (navigator.onLine) {
             statusEl.innerText = "Online";
-            statusEl.style.background = "#2a9d8f"; 
+            statusEl.style.background = "#2a9d8f";
             
             if(wasOffline) {
                 showToast("Back Online!", "info");
-                flushQueue(); 
+                flushQueue();
             }
 
             if (syncQueue.length > 0) {
@@ -66,7 +60,7 @@
             }
         } else {
             statusEl.innerText = "Offline Mode";
-            statusEl.style.background = "#e63946"; 
+            statusEl.style.background = "#e63946";
             el.innerText = syncQueue.length > 0 ? `${syncQueue.length} changes pending` : "Ready";
         }
     }
@@ -91,8 +85,7 @@
                 
                 if (data.status === "success") {
                     processIncomingData(data);
-                    // We run local recalc here too, just to be safe
-                    recalculateLocally(); 
+                    recalculateLocally();
                     saveDataLocally();
                     renderAll();
                     console.log("Data refreshed from cloud");
@@ -105,49 +98,43 @@
     }
 
     function processIncomingData(data) {
-        // We still accept the matrix from server, but we will override it with local calc
-        // to ensure immediate consistency with local transactions
-        let grid = [];
-        let headers = [];
-        
-        if (data.settlementMatrix) {
-            headers = data.settlementMatrix.receivers;
-            grid = data.settlementMatrix.payers.map(p => {
-                const rowObj = { name: p.name };
-                p.owes.forEach((val, idx) => {
-                    const receiverName = headers[idx];
-                    rowObj[receiverName] = val;
-                });
-                return rowObj;
-            });
-        }
-
         db = {
             itinerary: data.itinerary || [],
             budget: data.budget || [],
-            checklist: data.packing || [], 
-            settlement: data.settlement || [],
+            checklist: data.packing || [],
             transactions: data.transactions || [],
-            settlementGrid: grid,
-            settlementHeaders: headers
+            friendsMeta: data.meta.friends || [] 
         };
         
         if (db.itinerary.length > 0 && !curDay) curDay = db.itinerary[0].date;
     }
 
-    // ========================================================
-    // ⚡ NEW: CLIENT-SIDE CALCULATION (INSTANT UPDATES)
-    // ========================================================
     function recalculateLocally() {
-        // 1. Get all participants
-        const people = db.settlement.map(s => s.name).filter(n => n);
+        // Use stored metadata for names/groups, or fallback to what we find in transactions
+        let people = [];
+        let groupMap = {};
+
+        // 1. Build people and group list from metadata
+        if(db.friendsMeta && db.friendsMeta.length > 0) {
+            db.friendsMeta.forEach(f => {
+                people.push(f.name);
+                groupMap[f.name] = f.group;
+            });
+        }
+
+        if(people.length === 0) {
+            const tempSet = new Set();
+            db.transactions.forEach(t => { tempSet.add(t.payer); });
+            people = Array.from(tempSet);
+            people.forEach(p => groupMap[p] = "Individual");
+        }
+
         const count = people.length;
         if(count === 0) return;
 
-        // 2. Initialize Maps
         let paidMap = {};
         let shareMap = {};
-        let matrix = {}; // matrix[payer][consumer] = amount
+        let matrix = {};
         
         people.forEach(p => {
             paidMap[p] = 0;
@@ -156,39 +143,29 @@
             people.forEach(c => matrix[p][c] = 0);
         });
 
-        // 3. Process All Transactions (Newest + Oldest)
         db.transactions.forEach(t => {
             const amt = parseFloat(t.amount) || 0;
             const payer = t.payer;
             
-            // Skip invalid data
             if(!people.includes(payer)) return;
 
-            // Update Payer Total
             paidMap[payer] += amt;
 
             if (t.type === "Equal" || t.type === true) {
-                // Split Equally
                 const splitAmt = amt / count;
                 people.forEach(consumer => {
                     shareMap[consumer] += splitAmt;
-                    if(payer !== consumer) {
-                        matrix[payer][consumer] += splitAmt;
-                    }
+                    if(payer !== consumer) matrix[payer][consumer] += splitAmt;
                 });
             } else {
-                // Individual Split
-                const consumer = t.bene === 'All' ? 'ALL' : t.bene; // Handle inconsistencies
+                const consumer = t.bene === 'All' ? 'ALL' : t.bene;
                 if (people.includes(consumer)) {
                     shareMap[consumer] += amt;
-                    if(payer !== consumer) {
-                        matrix[payer][consumer] += amt;
-                    }
+                    if(payer !== consumer) matrix[payer][consumer] += amt;
                 }
             }
         });
 
-        // 4. Update db.settlement (The summary list)
         db.settlement = people.map(p => {
             const paid = paidMap[p];
             const share = shareMap[p];
@@ -199,6 +176,7 @@
             
             return {
                 name: p,
+                group: groupMap[p] || "Individual", 
                 totalpaid: paid,
                 shareOfSharedExpenses: share,
                 balance: bal,
@@ -206,7 +184,6 @@
             };
         });
 
-        // 5. Update db.settlementGrid (The breakdown matrix)
         db.settlementHeaders = people;
         db.settlementGrid = people.map(payer => {
             let row = { name: payer };
@@ -222,39 +199,120 @@
         renderItinerary();
         renderMoney();
         renderPacking();
+        renderSettlements(); 
     }
 
-    // --- 5. QUEUE SYSTEM ---
+    function renderSettlements() {
+        const isGroupMode = document.getElementById("groupToggle").checked;
+        const listDiv = document.getElementById("settlementList");
+        listDiv.innerHTML = "";
+
+        if (isGroupMode) {
+            // Group By Family
+            const groups = {};
+            db.settlement.forEach(p => {
+                const gName = p.group || "Individual";
+                if(!groups[gName]) groups[gName] = { net: 0, members: [] };
+                groups[gName].net += p.balance;
+                groups[gName].members.push(p);
+            });
+
+            for (const [gName, data] of Object.entries(groups)) {
+                const net = data.net;
+                const statusClass = net > 1 ? 'amount-pos' : (net < -1 ? 'amount-neg' : 'text-muted');
+                const statusText = net > 1 ? `Gets ₹${net.toFixed(0)}` : (net < -1 ? `Pays ₹${Math.abs(net).toFixed(0)}` : 'Settled');
+
+                const item = document.createElement("div");
+                item.className = "family-accordion-item";
+                item.innerHTML = `
+                    <div class="family-header" onclick="toggleFamily(this)">
+                        <div>
+                            <div style="font-size:0.95rem;">${gName}</div>
+                            <div style="font-size:0.75rem; opacity:0.7;">${data.members.length} members</div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span class="${statusClass}">${statusText}</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                    </div>
+                    <div class="family-content">
+                        ${data.members.map(m => {
+                            const mNet = m.balance;
+                            const mClass = mNet >= 0 ? 'amount-pos' : 'amount-neg';
+                            const mText = mNet >= 0 ? `+${mNet.toFixed(0)}` : `${mNet.toFixed(0)}`;
+                            // ADDED ONCLICK HERE
+                            return `
+                                <div class="member-row" onclick="openProfileByName('${m.name}')">
+                                    <span>${m.name}</span>
+                                    <span class="${mClass}">${mText} <i class="fas fa-chevron-right" style="font-size:0.6rem; opacity:0.3; margin-left:5px;"></i></span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+                listDiv.appendChild(item);
+            }
+
+        } else {
+            // Individual Mode (Simple List)
+            db.settlement.forEach(p => {
+                const net = p.balance;
+                if(Math.abs(net) < 1) return; // Hide settled
+                const color = net > 0 ? "amount-pos" : "amount-neg";
+                const text = net > 0 ? `Gets ₹${net.toFixed(0)}` : `Pays ₹${Math.abs(net).toFixed(0)}`;
+                
+                const div = document.createElement("div");
+                div.className = "friend-row";
+                // ADDED ONCLICK HERE
+                div.onclick = () => showProfile(p); // Direct call since we have the object 'p'
+                
+                div.innerHTML = `
+                    <div>
+                        <strong>${p.name}</strong>
+                        <div style="font-size:0.75rem; color:#888;">${p.group}</div>
+                    </div>
+                    <span class="${color}">${text} <i class="fas fa-chevron-right" style="font-size:0.7rem; opacity:0.3; margin-left:5px;"></i></span>
+                `;
+                listDiv.appendChild(div);
+            });
+        }
+    }
+
+    function toggleFamily(header) {
+        header.classList.toggle('active');
+        const content = header.nextElementSibling;
+        content.classList.toggle('open');
+    }
+
     async function gasPost(payload) {
         syncQueue.push(payload);
         saveDataLocally();
         if(navigator.onLine) await flushQueue();
-        return true; 
+        return true;
     }
 
     async function flushQueue() {
         if (syncQueue.length === 0 || !navigator.onLine || isSyncing) return;
-        isSyncing = true; 
+        isSyncing = true;
         const statusEl = document.getElementById("syncStatus");
         
         try {
             while(syncQueue.length > 0 && navigator.onLine) {
                 statusEl.innerText = `Syncing ${syncQueue.length}...`;
-                const item = syncQueue[0]; 
+                const item = syncQueue[0];
                 await fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify(item) });
-                syncQueue.shift(); 
-                saveDataLocally(); 
+                syncQueue.shift();
+                saveDataLocally();
             }
             showToast(`Synced updates to Cloud!`, "success");
         } catch (e) {
             showToast("Sync paused.", "error");
         } finally {
-            isSyncing = false; 
+            isSyncing = false;
             updateSyncUI();
         }
     }
 
-    // --- 6. ACTIONS ---
     async function toggleStatus(index, newStatus) {
         db.itinerary[index].status = newStatus;
         renderItinerary();
@@ -289,7 +347,7 @@
 
             if(!desc || !amount || payer === "Select..." || (splitType === 'individual' && bene === "Select...")) {
                 showToast("Please fill all fields!", "error");
-                return; 
+                return;
             }
 
             const transactionData = {
@@ -299,7 +357,6 @@
                 beneficiary: bene
             };
 
-            // 1. Update Transaction Log
             db.transactions.unshift({
                 date: transactionData.date,
                 desc: transactionData.desc,
@@ -309,17 +366,15 @@
                 bene: transactionData.beneficiary === 'ALL' ? 'All' : transactionData.beneficiary
             });
             
-            // 2. Update Budget
             const budgetItem = db.budget.find(b => b.category === cat);
             if(budgetItem) budgetItem.actual = (parseFloat(budgetItem.actual) || 0) + amount;
 
-            // 3. INSTANT CALCULATION (The Fix)
             recalculateLocally();
 
             renderMoney();
             renderDashboard();
+            renderSettlements(); 
             
-            // 4. Reset Form
             document.getElementById("exDesc").value = "";
             document.getElementById("exAmount").value = "";
             document.getElementById("exPayer").selectedIndex = 0;
@@ -341,10 +396,6 @@
         }
     }
 
-    // ============================================
-    // 🔍 NEW: FILTERING LOGIC
-    // ============================================
-
     function filterTransactions() {
         const fDate = document.getElementById("fDate").value.toLowerCase();
         const fDesc = document.getElementById("fDesc").value.toLowerCase();
@@ -353,9 +404,8 @@
         const fType = document.getElementById("fType").value;
         const fBene = document.getElementById("fBene").value.toLowerCase();
 
-        // Filter Logic
         const filtered = db.transactions.filter(t => {
-            const dDate = formatDate(t.date).toLowerCase(); 
+            const dDate = formatDate(t.date).toLowerCase();
             const matchDate = dDate.includes(fDate);
             const matchDesc = String(t.desc).toLowerCase().includes(fDesc);
             const matchAmt = (parseFloat(t.amount) || 0) >= fAmt;
@@ -380,7 +430,6 @@
         });
     }
 
-    // --- HELPER FUNCTIONS ---
     function formatDate(dateInput) {
         if (!dateInput) return "---";
         const d = new Date(dateInput);
@@ -392,7 +441,7 @@
         if (!timeInput) return "---";
         let rawTime = "";
         if (typeof timeInput === 'string' && timeInput.includes("1899")) {
-            const parts = timeInput.split(" "); 
+            const parts = timeInput.split(" ");
             const timePart = parts.find(p => p.includes(":"));
             rawTime = timePart ? timePart.substring(0, 5) : "";
         } else if (timeInput instanceof Date) {
@@ -531,7 +580,7 @@
         db.itinerary.filter(i => i.date === curDay).forEach((act) => {
             const fullIdx = db.itinerary.indexOf(act);
             const div = document.createElement("div");
-            div.className="activity-card " + (act.status ? "visited" : ""); 
+            div.className="activity-card " + (act.status ? "visited" : "");
             div.style.marginBottom = "25px";
             div.innerHTML = `
                 <div class = "activity-content" style="display:flex; justify-content:space-between; align-items:center;">
@@ -552,7 +601,6 @@
         const bSel = document.getElementById("exBene");
         const fPayer = document.getElementById("fPayer");
 
-        // Populate Payers (both for add expense AND filter)
         if(pSel.children.length <= 1) {
             pSel.innerHTML = bSel.innerHTML = "<option disabled selected>Select...</option>";
             const uniquePayers = new Set();
@@ -564,7 +612,6 @@
                 uniquePayers.add(s.name);
             });
 
-            // Populate Filter Payer if empty
             if(fPayer.children.length <= 1) {
                 uniquePayers.forEach(name => {
                     fPayer.innerHTML += `<option value="${name}">${name}</option>`;
@@ -590,7 +637,6 @@
         document.getElementById("totalSpentText").innerText = `₹${spent.toLocaleString()}`;
         document.getElementById("totalRemText").innerText = `₹${(planned - spent).toLocaleString()}`;
         
-        // Initial Table Render (triggers filtering to show all)
         filterTransactions();
     }
 
@@ -620,32 +666,36 @@
             document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
             el.classList.add("active");
         }
-        if(id === 'money') renderMoney();
+        if(id === 'money') { renderMoney(); renderSettlements(); }
         if(id === 'itinerary') renderItinerary();
         if(id === 'packing') renderPacking();
         if(id === 'dashboard') renderDashboard();
     }
 
-    // ================= MODAL LOGIC (UPDATED 3-LAYER) =================
-
-    let currentProfileName = ""; // Stores who we are looking at
+    // ================= MODAL LOGIC =================
+    let currentProfileName = "";
 
     function closeProfileModal() {
         document.getElementById("profileModal").classList.remove('show');
-        setTimeout(() => showLayer(1), 300); // Reset to main view
+        setTimeout(() => showLayer(1), 300);
     }
 
-    // Controls which view is visible: 1=Main, 2=FriendList, 3=DeepDive
     function showLayer(layerNumber) {
         document.getElementById("modalMainView").style.display = layerNumber === 1 ? "block" : "none";
         document.getElementById("modalFriendListView").style.display = layerNumber === 2 ? "block" : "none";
         document.getElementById("modalDeepDiveView").style.display = layerNumber === 3 ? "block" : "none";
     }
 
+    function openProfileByName(name) {
+        const person = db.settlement.find(p => p.name === name);
+        if (person) {
+            showProfile(person);
+        }
+    }
+
     function showProfile(personData) {
         currentProfileName = personData.name;
         
-        // Render Layer 1 (Main Profile)
         document.getElementById("modalName").innerText = currentProfileName;
         document.getElementById("modalAvatar").innerText = currentProfileName.substring(0,2).toUpperCase();
         document.getElementById("modalPaid").innerText = `₹${(parseFloat(personData.totalpaid) || 0).toLocaleString()}`;
@@ -661,7 +711,6 @@
         bEl.style.color = isDebt ? "var(--alert)" : "var(--secondary)";
         bEl.style.background = isDebt ? "rgba(230, 57, 70, 0.1)" : "rgba(42, 157, 143, 0.1)";
 
-        // Set Click Action to go to Layer 2
         bEl.onclick = () => {
             renderFriendList(currentProfileName);
             showLayer(2);
@@ -670,7 +719,6 @@
         document.getElementById("profileModal").classList.add("show");
     }
 
-    // LAYER 2: Render List of Net Balances vs Other People
     function renderFriendList(myName) {
         const container = document.getElementById("friendListContainer");
         container.innerHTML = "";
@@ -679,33 +727,28 @@
         const headers = db.settlementHeaders || [];
         let hasData = false;
 
-        // Find My Row (Where I paid for others)
         const myRow = grid.find(r => r.name === myName) || {};
 
         headers.forEach(theirName => {
             if (theirName === myName) return;
 
-            // Math: Net = (What I paid for them) - (What they paid for me)
             const iPaidForThem = parseFloat(myRow[theirName]) || 0;
-            
-            // Find Their Row (Where they paid for me)
             const theirRow = grid.find(r => r.name === theirName) || {};
             const theyPaidForMe = parseFloat(theirRow[myName]) || 0;
 
             const net = iPaidForThem - theyPaidForMe;
 
-            if (Math.abs(net) > 1) { // Only show if difference > 1 rupee
+            if (Math.abs(net) > 1) { 
                 hasData = true;
                 const div = document.createElement("div");
                 div.className = "friend-row";
                 
-                const color = net > 0 ? "var(--secondary)" : "var(--alert)"; // Green if I get, Red if I pay
+                const color = net > 0 ? "var(--secondary)" : "var(--alert)";
                 const text = net > 0 ? `Get from <b>${theirName}</b>` : `Pay to <b>${theirName}</b>`;
                 const amount = `₹${Math.round(Math.abs(net)).toLocaleString()}`;
 
                 div.innerHTML = `<span>${text}</span> <span style="color:${color}; font-weight:800;">${amount} <i class="fas fa-chevron-right" style="font-size:0.7rem; opacity:0.5; margin-left:5px;"></i></span>`;
                 
-                // Click to go to Layer 3
                 div.onclick = () => {
                     renderDeepDive(myName, theirName, iPaidForThem, theyPaidForMe);
                     showLayer(3);
@@ -719,23 +762,19 @@
         }
     }
 
-    // LAYER 3: Specific Breakdown (Receive X, Pay Y)
     function renderDeepDive(myName, theirName, iPaidForThem, theyPaidForMe) {
         const container = document.getElementById("deepDiveContainer");
         document.getElementById("deepDiveTitle").innerText = `${theirName}`;
         container.innerHTML = "";
 
-        // 1. Show what I receive (Positive)
         if (iPaidForThem > 0) {
             addDetailItem(container, `Receive (You paid for ${theirName})`, `+₹${Math.round(iPaidForThem)}`, "var(--secondary)");
         }
 
-        // 2. Show what I pay (Negative)
         if (theyPaidForMe > 0) {
             addDetailItem(container, `Pay (${theirName} paid for you)`, `-₹${Math.round(theyPaidForMe)}`, "var(--alert)");
         }
 
-        // 3. Show Grand Total Line
         const net = iPaidForThem - theyPaidForMe;
         const div = document.createElement("div");
         div.style.padding = "15px 12px";
